@@ -23,11 +23,38 @@ struct key_value_mapper *head;
 struct key_value_mapper kvm;
 
 
-// not sure what return type this should be
-void get_next(char *key, int partition_number)
+// struct for each partition
+struct partition_info {
+    int partition_hash;
+    struct key_value_mapper *sorted_head;
+};
+// heap allocated array that will hold the partitions
+struct partition_info *sorted_partitions;
+
+// global to keep track of the number of partitions
+int total_partitions;
+
+// returns a pointer to the iterator's next value
+char* get_next(char *key, int partition_number)
 {
+    // QUESTION: is partition_number the same as the hash partition??
 
-
+    int hash = MR_DefaultHashPartition(key, total_partitions);
+    
+    for(int i = 0; i < total_partitions; i++) {
+        if(sorted_partitions[i].partition_hash == hash) {
+            struct key_value_mapper *iterator = sorted_partitions[i].sorted_head;
+            while(iterator != NULL) {
+                // find the key and return the next value
+                if(iterator.key == key) {
+                    return iterator.next.val;
+                }
+            }
+        }
+    }
+    
+    // returns NULL if for some reason the key is not found in the partition
+    return NULL;
 }
 
 
@@ -42,8 +69,63 @@ unsigned long MR_DefaultHashPartition(char *key, int num_partitions)
 
 unsigned long MR_SortedPartition(char *key, int num_partitions)
 {
+    // not sure if initializing a global here will work
+    total_partitions = num_partitions;
 
+    // initialize the array of pointers
+    sorted_partitions = calloc(sizeof(partition_info) * num_partitions);
 
+    // loop through unsorted linked list
+    struct key_value_mapper *iterator = head;
+    while(iterator != NULL) {
+        // get this iterator's hash
+        int hash = MR_DefaultHashPartition(iterator.key, num_partitions); 
+
+        // flag to check if there is an existing partition with a matching hash
+        int found = 0; 
+
+        for(int i = 0; i < num_partitions; i++) {
+            if(sorted_partitions[i].partition_hash == hash) {
+                // add the iterator to the partition's linked list
+                // iterator.next = sorted_partitions[i].sorted_head;
+                // sorted_partitions[i].sorted_head = iterator;
+
+                // make a copy of the current struct
+                struct key_value_mapper copy; 
+                copy.val = iterator.val;
+                copy.key = iterator.key;
+
+                copy.next = sorted_partitions[i].sorted_head;
+                sorted_partitions[i].sorted_head = copy;
+
+                found = 1;
+            } 
+        }
+
+        // EDGE CASE: the key/value pair to be added is the first for its partition
+        if(!found) {
+            for(int i = 0; i < num_partitions; i++) {
+                if(sorted_partitions[i] == 0) {
+                    // make a copy of the current struct
+                    struct key_value_mapper copy; 
+                    copy.val = iterator.val;
+                    copy.key = iterator.key;
+
+                    struct partition_info new;
+                    new.partition_hash = hash;
+                    new.sorted_head = copy;
+                    copy.next = NULL;
+                }
+            }
+        }
+
+        // might have to create new key_value_mapper structs each time we add it to a partition linked list
+        // since we are changing its next value, which will probably mess things up
+        iterator = iterator.next;
+    }
+
+    // not sure what to return??
+    return NULL;
 }
 
 
