@@ -5,6 +5,7 @@
 #include "mapreduce.h"
 
 void Map(char *file_name) {
+    
     FILE *fp = fopen(file_name, "r");
     assert(fp != NULL);
 
@@ -23,6 +24,7 @@ void Map(char *file_name) {
 void Reduce(char *key, Getter get_next, int partition_number) {
     int count = 0;
     char *value;
+    
     while ((value = get_next(key, partition_number)) != NULL)
         count++;
     printf("%s %d\n", key, count);

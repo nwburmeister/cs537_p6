@@ -1,0 +1,15 @@
+dog
+cat
+base
+bus
+bass
+hello
+world
+train
+plane
+plain
+car
+yellow
+blue
+green
+orange

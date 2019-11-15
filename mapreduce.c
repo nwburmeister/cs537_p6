@@ -6,6 +6,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "mapreduce.h"
+
+Mapper map;
+Reducer reducer;
+struct partition_info *partitions;
+int NEXT_PARTITION;
+int NUM_PARTITIONS;
+pthread_mutex_t fileLock;
 
 struct arg_struct {
     char *key;
@@ -14,48 +22,16 @@ struct arg_struct {
 };
 
 struct key_value_mapper {
+    int processed;
     char *key;
     char *val;
-    struct key_value_mapper next;
+    struct key_value_mapper *next;
 };
 
-struct key_value_mapper *head;
-struct key_value_mapper kvm;
+typedef struct partition_info {
+    struct key_value_mapper *head;
+} PARTITION_INFO;
 
-
-// struct for each partition
-struct partition_info {
-    int partition_hash;
-    struct key_value_mapper *sorted_head;
-};
-// heap allocated array that will hold the partitions
-struct partition_info *sorted_partitions;
-
-// global to keep track of the number of partitions
-int total_partitions;
-
-// returns a pointer to the iterator's next value
-char* get_next(char *key, int partition_number)
-{
-    // QUESTION: is partition_number the same as the hash partition??
-
-    int hash = MR_DefaultHashPartition(key, total_partitions);
-    
-    for(int i = 0; i < total_partitions; i++) {
-        if(sorted_partitions[i].partition_hash == hash) {
-            struct key_value_mapper *iterator = sorted_partitions[i].sorted_head;
-            while(iterator != NULL) {
-                // find the key and return the next value
-                if(iterator.key == key) {
-                    return iterator.next.val;
-                }
-            }
-        }
-    }
-    
-    // returns NULL if for some reason the key is not found in the partition
-    return NULL;
-}
 
 
 unsigned long MR_DefaultHashPartition(char *key, int num_partitions) 
@@ -67,65 +43,94 @@ unsigned long MR_DefaultHashPartition(char *key, int num_partitions)
     return hash % num_partitions;
 }
 
-unsigned long MR_SortedPartition(char *key, int num_partitions)
+// returns a pointer to the iterator's next value
+char* get_next(char *key, int partition_number)
 {
-    // not sure if initializing a global here will work
-    total_partitions = num_partitions;
-
-    // initialize the array of pointers
-    sorted_partitions = calloc(sizeof(partition_info) * num_partitions);
-
-    // loop through unsorted linked list
-    struct key_value_mapper *iterator = head;
-    while(iterator != NULL) {
-        // get this iterator's hash
-        int hash = MR_DefaultHashPartition(iterator.key, num_partitions); 
-
-        // flag to check if there is an existing partition with a matching hash
-        int found = 0; 
-
-        for(int i = 0; i < num_partitions; i++) {
-            if(sorted_partitions[i].partition_hash == hash) {
-                // add the iterator to the partition's linked list
-                // iterator.next = sorted_partitions[i].sorted_head;
-                // sorted_partitions[i].sorted_head = iterator;
-
-                // make a copy of the current struct
-                struct key_value_mapper copy; 
-                copy.val = iterator.val;
-                copy.key = iterator.key;
-
-                copy.next = sorted_partitions[i].sorted_head;
-                sorted_partitions[i].sorted_head = copy;
-
-                found = 1;
-            } 
-        }
-
-        // EDGE CASE: the key/value pair to be added is the first for its partition
-        if(!found) {
-            for(int i = 0; i < num_partitions; i++) {
-                if(sorted_partitions[i] == 0) {
-                    // make a copy of the current struct
-                    struct key_value_mapper copy; 
-                    copy.val = iterator.val;
-                    copy.key = iterator.key;
-
-                    struct partition_info new;
-                    new.partition_hash = hash;
-                    new.sorted_head = copy;
-                    copy.next = NULL;
-                }
-            }
-        }
-
-        // might have to create new key_value_mapper structs each time we add it to a partition linked list
-        // since we are changing its next value, which will probably mess things up
-        iterator = iterator.next;
+    // QUESTION: is partition_number the same as the hash partition??
+    
+    struct key_value_mapper *curr_partition =  partitions[partition_number].head;
+    
+    if (curr_partition == NULL) {
+        return NULL;
     }
 
-    // not sure what to return??
+    while(curr_partition != NULL) {
+        // find the key and return the next value
+        if(curr_partition->key == key && curr_partition->processed == 0) {
+            curr_partition->processed = 1;
+            if (curr_partition->next == NULL){
+                return NULL;
+            }
+            return curr_partition->next->val;
+        }
+        curr_partition = curr_partition->next;
+    }
+    
+    // returns NULL if for some reason the key is not found in the partition
     return NULL;
+}
+
+
+// TODO DO SOMETHING WITH THIS
+unsigned long MR_SortedPartition(char *key, int num_partitions)
+{   
+    char fourChars[5];
+    strncpy(fourChars, key, 4);
+
+    char *ptr;
+    long voodoo;
+
+    voodoo = strtoul(fourChars, &ptr, 16);
+    return voodoo;   
+}
+
+// sort each partition in alphabetical order
+void sort(int partition_number) {
+
+
+    // new linked list that will be sorted
+    struct partition_info *new_sorted_list;
+    // current partition we are trying to sort
+    struct key_value_mapper *iterator = partitions[partition_number].head;
+    
+
+    while(iterator != NULL) {
+        
+        struct key_value_mapper *temp = iterator;
+        
+        if(new_sorted_list->head == NULL) {
+            
+            new_sorted_list->head = temp;
+        
+        } else {
+            // get 32bit unsigned number to sort on
+            unsigned long voodoo_to_insert = MR_SortedPartition(temp->key, NUM_PARTITIONS);
+            // get head of partition
+            struct key_value_mapper *new_list_iterator = new_sorted_list->head;
+            // init prev node
+            struct key_value_mapper *prev_node = NULL;
+            while(new_list_iterator != NULL) {
+                unsigned long curr_integer = MR_SortedPartition(new_list_iterator->key, NUM_PARTITIONS);
+                if(voodoo_to_insert <= curr_integer) {
+                    if(prev_node != NULL) {
+                        prev_node->next = temp;
+                        temp->next = new_list_iterator;
+                        break;
+                    } else {
+                        temp->next = new_list_iterator;
+                        new_sorted_list->head = temp;
+                        break;
+                    }
+                }
+                prev_node = new_list_iterator;
+                new_list_iterator = new_list_iterator->next;
+            }
+            // if at end of list, insert node
+            prev_node->next = temp;
+            temp->next = NULL; 
+        }
+        iterator = iterator->next;
+    }
 }
 
 
@@ -133,37 +138,67 @@ unsigned long MR_SortedPartition(char *key, int num_partitions)
 // AT THE BEGINNING OF THE LINKED LIST
 void MR_Emit(char *key, char *value)
 {   
-    // TODO: ADD LOCKS
-    struct key_value_mapper *iterator = head;
-    struct key_value_mapper *prev = NULL;
-
-    if(head == NULL) {
-        struct key_value_mapper new;
-        new.key = key;
-        new.val = value;
-        head = new;
-        new.next = NULL;
-    }else {
-        struct key_value_mapper new;
-        new.key = key;
-        new.val = value;
-        new.next = head;
-        head = new;
+    // loop through unsorted linked list
+    
+    int hashIndex = MR_DefaultHashPartition(key, NUM_PARTITIONS); 
+    struct key_value_mapper *curr_partition =  partitions[hashIndex].head;
+    struct key_value_mapper *new = malloc(sizeof(struct key_value_mapper));
+    if(curr_partition == NULL){
+        new->key = key;
+        new->val = value;
+        new->processed = 0;
+        new->next = NULL;
+        partitions[hashIndex].head = new;
+    } else {
+        new->key = key;
+        new->val = value;
+        new->processed = 0;
+        new->next = partitions[hashIndex].head;
+        partitions[hashIndex].head = new;
     }
-
-    // while(iterator != NULL) {
-    //     if(strcmp(iterator.key, key) > 0) {
-    //         struct key_value_mapper new;
-    //         new.key = key;
-    //         new.val = value;
-    //         prev.next = new;
-    //         new.next = iterator; 
-    //         break;
-    //     }
-    //     prev = iterator;
-    //     iterator = iterator.next;
-    // }
 } 
+
+
+// void Reduce_Thread_Helper_Func()
+// {
+
+//     // need to sort partition
+//     // keep track of next partition to sort
+
+//     while(1) {
+
+//         if (NEXT_PARTITION > num_partitions){
+//             break;
+//         }
+
+//         struct key_value_mapper *iterator =  partitions[NEXT_PARTITION].head;
+//         sort(NEXT_PARTITION);
+//         NEXT_PARTITION++;
+
+//         while(iterator != NULL)
+//         {
+//             reduce(iterator->key, get_next, i);
+//             iterator = iterator->next;
+//         }
+//     }
+
+//     // todo free data
+// }
+
+
+// void* Map_Thread_Helper_Func(void* arg){
+//     while (1) {
+//         char* filename;
+//         pthread_mutex_lock(&fileLock);
+//         if(counter >= NUM_FILES){
+//             pthread_mutex_unlock(&fileLock);
+//             return NULL;
+//         }
+//         filename = file_names[counter++];
+//         pthread_mutex_unlock(&fileLock);
+//         map(filename);
+//     }
+// }
 
 
 void MR_Run(int argc, char *argv[], Mapper map,
@@ -173,20 +208,39 @@ void MR_Run(int argc, char *argv[], Mapper map,
 {    
     // do some checks on input arguments
 
+    NUM_PARTITIONS = num_partitions;
+
+    map = map;
+    reduce = reduce;
+    partitions = calloc(num_partitions, sizeof(PARTITION_INFO));
+    
     for (int i = 1; i < argc; i++)
     {
         map(argv[i]);
+        // printf("%s\n", argv[i]);
+    }
+
+    
+    for (int i = 0; i < num_partitions; i++){
+        struct key_value_mapper *iterator =  partitions[i].head;
+        
+        while(iterator != NULL)
+        {
+            reduce(iterator->key, get_next, i);
+            
+            iterator = iterator->next;
+        }
     }
 
 
     // call sorted partition
     
-    struct key_value_mapper iterator = head;
-    while(iterator != NULL)
-    {
-        reduce(iterator.key, get_next, MR_DefaultHashPartition(iterator.key));
-        iterator = iterator.next;
-    }
+    // struct key_value_mapper *iterator = head;
+    // while(iterator != NULL)
+    // {
+    //     reduce(iterator->key, get_next, MR_DefaultHashPartition(iterator->key, num_partitions));
+    //     iterator = iterator->next;
+    // }
 
     
 
