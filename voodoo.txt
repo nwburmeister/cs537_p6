@@ -1,12 +1,12 @@
-dog
-cat
-base
-bus
-bass
-hello
-world
-train
-plane
+dog cat here
+cat train plane
+base mass face
+bus taste good
+bass fish math
+hello computer
+world fast
+train plain
+plane hello
 plain
 car
 yellow
