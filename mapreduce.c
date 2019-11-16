@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include "unistd.h"
 #include "mapreduce.h"
 
 struct arg_struct {
@@ -28,7 +30,7 @@ typedef struct partition_info {
 
 Partitioner partitioner;
 Reducer reducer;
-Mapper map;
+Mapper mapper;
 
 int *isNextKeyDifferent;
 int NUM_FILES;
@@ -40,6 +42,9 @@ char** FILES;
 pthread_mutex_t fileLock;
 struct partition_info *partitions;
 
+pthread_key_t glob_var_key;
+;
+
 
 unsigned long MR_DefaultHashPartition(char *key, int num_partitions) 
 {
@@ -50,34 +55,40 @@ unsigned long MR_DefaultHashPartition(char *key, int num_partitions)
     return hash % num_partitions;
 }
 
-// TODO DO SOMETHING WITH THIS
-unsigned long MR_SortedPartition(char *key, int num_partitions)
-{
-
-    char fourChars[5];
-    strncpy(fourChars, key, 4);
-
-    char *ptr;
-    unsigned long voodoo;
-
-    voodoo = strtoul(fourChars, &ptr, 36);
-    //printf("%s %ld   \n ", fourChars, voodoo);
-    return voodoo;
+int _log(int x){
+    int curr;
+    int y;
+    while (curr != 1){
+        curr = x / 2;
+        y++;
+    }
+    return y;
 }
+
+////
+//unsigned long MR_SortedPartition(char *key, int num_partitions)
+//{
+//
+//    int num_bits = log(num_partitions);
+//    return voodoo;
+//}
 
 // returns a pointer to the iterator's next value
 char* get_next(char *key, int partition_number)
 {
 
-    struct key_value_mapper *curr_partition =  partitions[partition_number].head;
+    struct key_value_mapper *curr_partition = partitions[partition_number].head;
     // need to check if next value is different
+
+    pthread_mutex_lock(&partitions[partition_number].lock);
     if (isNextKeyDifferent[partition_number] == 1){
         // reset key to 0
         isNextKeyDifferent[partition_number] = 0;
+        pthread_mutex_unlock(&partitions[partition_number].lock);
         return NULL;
     }
 
-    while (curr_partition != NULL){
+    if (curr_partition != NULL){
         if (strcmp(curr_partition->key, key) == 0) {
             partitions[partition_number].head = curr_partition->next;
             if (curr_partition->next != NULL) {
@@ -85,17 +96,22 @@ char* get_next(char *key, int partition_number)
                 if (strcmp(curr_partition->next->key, key) != 0){
                     // set flag to 1
                     isNextKeyDifferent[partition_number] = 1;
-                    return curr_partition->next->val;
+                    pthread_mutex_unlock(&partitions[partition_number].lock);
+                    return curr_partition->val;
                 }
+                pthread_mutex_unlock(&partitions[partition_number].lock);
                 return curr_partition->val;
 
             }else {
+                pthread_mutex_unlock(&partitions[partition_number].lock);
                 return curr_partition->val;
             }
         }
-        curr_partition = curr_partition->next;
+        //curr_partition = curr_partition->next;
     }
     // returns NULL if for some reason the key is not found in the partition
+
+    pthread_mutex_unlock(&partitions[partition_number].lock);
     return NULL;
 }
 
@@ -125,17 +141,19 @@ void MR_Emit(char *key, char *value)
     }
 
     // ACQUIRE THE LOCK
-    pthread_mutex_lock(&curr_partition[hashIndex].lock);
+    pthread_mutex_lock(&partitions[hashIndex].lock);
     struct key_value_mapper *prev = NULL;
     while(iterator != NULL) {    
         if(strcmp(iterator->key, key) > 0) {
             if (prev == NULL){
                 new->next = iterator;
                 partitions[hashIndex].head = new;
+                pthread_mutex_unlock(&partitions[hashIndex].lock);
                 return;
             } else {
                 prev->next = new;
                 new->next = iterator;
+                pthread_mutex_unlock(&partitions[hashIndex].lock);
                 return;
             }
              
@@ -146,34 +164,42 @@ void MR_Emit(char *key, char *value)
     prev->next = new;
     new->next = NULL;
     // RELEASE THE LOCK
-    pthread_mutex_unlock(&curr_partition[hashIndex].lock);
+    pthread_mutex_unlock(&partitions[hashIndex].lock);
     
     //printf("%s Partition Index: %d\n", partitions[hashIndex].head->key, hashIndex);
-    
 } 
 
 
- void Reduce_Thread_Helper_Func()
+ void* Reduce_Thread_Helper_Func()
  {
 
      // need to sort partition
      // keep track of next partition to sort
 
      while(1) {
-
-         if (NEXT_PARTITION > num_partitions){
-             break;
+         pthread_mutex_lock(&fileLock);
+         if (NUM_PARTITIONS <= NEXT_PARTITION){
+             pthread_mutex_unlock(&fileLock);
+             return NULL;
          }
+         // GET THE NEXT AVAILABLE PARTITION TO PROCESS
 
          struct key_value_mapper *iterator =  partitions[NEXT_PARTITION].head;
-         sort(NEXT_PARTITION);
+         int *p = malloc(sizeof(int));
+         *p = NEXT_PARTITION;
+         pthread_setspecific(glob_var_key, p);
          NEXT_PARTITION++;
+         pthread_mutex_unlock(&fileLock);
 
+         int* glob_spec_var = pthread_getspecific(glob_var_key);
+         //printf("%p %d\n", &glob_spec_var, *glob_spec_var);
          while(iterator != NULL)
          {
-             reduce(iterator->key, get_next, i);
-             iterator = iterator->next;
+             //printf("Thread %d val is %d\n", (unsigned int) pthread_self(), *glob_spec_var);
+             reducer(iterator->key, get_next, *glob_spec_var);
+             iterator = partitions[*glob_spec_var].head;
          }
+
      }
 
      // todo free data
@@ -181,18 +207,25 @@ void MR_Emit(char *key, char *value)
 
 
  void* Map_Threads_Helper_Func(){
+     //printf("NUM_FILES %d\n", NUM_FILES);
      while (1)
      {
          char* curr_filename;
          pthread_mutex_lock(&fileLock);
+
          if(NUM_FILES <= CURR_FILE){
+             printf("%s\n", "here");
              pthread_mutex_unlock(&fileLock);
              return NULL;
          }
-         curr_filename = file_names[CURR_FILE];
+         curr_filename = FILES[CURR_FILE];
          CURR_FILE++;
+         //printf("CURR FILE: %d\n", CURR_FILE);
+         //printf("PID: %d\n", getpid());
          pthread_mutex_unlock(&fileLock);
-         map(curr_filename);
+         printf("%s\n", curr_filename);
+         mapper(curr_filename);
+         printf("%s\n", "enter thread");
      }
  }
 
@@ -201,27 +234,27 @@ void MR_Run(int argc, char *argv[], Mapper map,
             int num_mappers, Reducer reduce,
             int num_reducers, Partitioner partition,
             int num_partitions)
-{    
+{
+
     // INITIALIZATION ***********************************************
 
-
     partitioner = partition;
-    NUM_PARTITIONS = num_partitions;
-    NUM_FILES = argc;
-    map = map;
+    mapper = map;
     reduce = reduce;
+    reducer = reduce;
+    NUM_PARTITIONS = num_partitions;
+    NUM_FILES = argc - 1;
     partitions = malloc((num_partitions+1) * sizeof(struct partition_info));
     isNextKeyDifferent = calloc(num_partitions, sizeof(int) );
-    FILES = argv[1]
-
-
+    FILES = &argv[1];
     // END INITIALIZATION *******************************************
 
-    // THREADS FOR MAPPERS
+     // THREADS FOR MAPPERS
      pthread_t mappers[num_mappers];
      for (int i = 0; i < num_mappers; i++)
      {
-         if (i+1 < argc) {
+         if (i < NUM_FILES) {
+             printf("%s\n", "STARTING");
              pthread_create(&mappers[i], NULL, Map_Threads_Helper_Func, NULL);
          }
      }
@@ -229,23 +262,38 @@ void MR_Run(int argc, char *argv[], Mapper map,
      // JOIN MAPPERS
      for (int i = 0; i < num_mappers; i++)
      {
-         pthread_join(mappers[i], NULL);
+         if (i < NUM_FILES)
+            pthread_join(mappers[i], NULL);
      }
 
      // THREADS FOR REDUCERS
-//     pthread_t reducers[num_reducers];
-//
-//     for (int i = 0; i < num_reducers; i++)
-//     {
-//         pthread_create(map(&mappers[i], NULL, reduce, (void *)&args);
-//     }
-//
-//     for (int i = 0; i < num_reducers; i++)
-//     {
-//
-//         pthread_join(map(&mappers[i] argv[i]));
-//     }
+     pthread_t reducers[num_reducers];
+     pthread_key_create(&glob_var_key,NULL);
+     for (int i = 0; i < num_reducers; i++)
+     {
 
+         if (i < NUM_PARTITIONS){
+             pthread_create(&reducers[i], NULL, Reduce_Thread_Helper_Func, NULL);
+         }
+
+     }
+
+     for (int i = 0; i < num_reducers; i++)
+     {
+         if (i < NUM_PARTITIONS){
+             pthread_join(reducers[i], NULL);
+         }
+     }
+
+//    for (int i = 0; i < NUM_PARTITIONS; i++){
+//        struct key_value_mapper *iterator =  partitions[i].head;
+//        printf("%s\n", "NEW PARTITION*******************");
+//        while(iterator != NULL)
+//        {
+//            reduce(iterator->key, get_next, i);
+//            iterator = partitions[i].head;
+//        }
+//    }
 }
 
 
