@@ -56,22 +56,45 @@ unsigned long MR_DefaultHashPartition(char *key, int num_partitions)
 }
 
 int _log(int x){
-    int curr;
-    int y;
+    int curr = x;
+    int y = 0;
     while (curr != 1){
-        curr = x / 2;
+        curr = curr / 2;
         y++;
     }
+    //y -= 1; // do we need this?
     return y;
 }
 
-////
-//unsigned long MR_SortedPartition(char *key, int num_partitions)
-//{
 //
-//    int num_bits = log(num_partitions);
-//    return voodoo;
-//}
+unsigned long MR_SortedPartition(char *key, int num_partitions)
+{
+
+    if (num_partitions == 1){
+        return 0;
+    }
+
+    int sigbits = _log(num_partitions);
+    unsigned long res = 0;
+    unsigned long tmp = (int)key[0];
+    if ( key[1] != NULL ) {
+        for (int i = 1; i < 4; i++){
+            if (key[i] == NULL){
+                break;
+            }else {
+                res = tmp << 8;
+                int curr = (int)key[i];
+                res += curr;
+                tmp = res;
+                printf("%lx\n", res);
+            }
+        }
+    }
+    int a = _log(res);
+    int shift = a - (sigbits-1);
+
+    return res >> shift;
+}
 
 // returns a pointer to the iterator's next value
 char* get_next(char *key, int partition_number)
@@ -165,8 +188,6 @@ void MR_Emit(char *key, char *value)
     new->next = NULL;
     // RELEASE THE LOCK
     pthread_mutex_unlock(&partitions[hashIndex].lock);
-    
-    //printf("%s Partition Index: %d\n", partitions[hashIndex].head->key, hashIndex);
 } 
 
 
@@ -192,14 +213,11 @@ void MR_Emit(char *key, char *value)
          pthread_mutex_unlock(&fileLock);
 
          int* glob_spec_var = pthread_getspecific(glob_var_key);
-         //printf("%p %d\n", &glob_spec_var, *glob_spec_var);
          while(iterator != NULL)
          {
-             //printf("Thread %d val is %d\n", (unsigned int) pthread_self(), *glob_spec_var);
              reducer(iterator->key, get_next, *glob_spec_var);
              iterator = partitions[*glob_spec_var].head;
          }
-
      }
 
      // todo free data
@@ -214,18 +232,13 @@ void MR_Emit(char *key, char *value)
          pthread_mutex_lock(&fileLock);
 
          if(NUM_FILES <= CURR_FILE){
-             printf("%s\n", "here");
              pthread_mutex_unlock(&fileLock);
              return NULL;
          }
          curr_filename = FILES[CURR_FILE];
          CURR_FILE++;
-         //printf("CURR FILE: %d\n", CURR_FILE);
-         //printf("PID: %d\n", getpid());
          pthread_mutex_unlock(&fileLock);
-         printf("%s\n", curr_filename);
          mapper(curr_filename);
-         printf("%s\n", "enter thread");
      }
  }
 
@@ -254,7 +267,6 @@ void MR_Run(int argc, char *argv[], Mapper map,
      for (int i = 0; i < num_mappers; i++)
      {
          if (i < NUM_FILES) {
-             printf("%s\n", "STARTING");
              pthread_create(&mappers[i], NULL, Map_Threads_Helper_Func, NULL);
          }
      }
