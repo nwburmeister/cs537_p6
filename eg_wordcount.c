@@ -30,9 +30,9 @@ void Reduce(char *key, Getter get_next, int partition_number) {
         count++;
     }
 
-    printf("%s %d\n", key, count);
+    //printf("%s %d\n", key, count);
 }
 
 int main(int argc, char *argv[]) {
-    MR_Run(argc, argv, Map, 10, Reduce, 10, MR_DefaultHashPartition, 10);
+    MR_Run(argc, argv, Map, 10, Reduce, 10, MR_DefaultHashPartition, 32);
 }
