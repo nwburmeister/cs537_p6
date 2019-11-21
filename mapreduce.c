@@ -75,23 +75,31 @@ unsigned long MR_SortedPartition(char *key, int num_partitions)
         return 0;
     }
 
-    unsigned long res = 0;
-    for(int i = 0; i < 4; i++) {
-		res <<= 8;// shift the long 8 bits left
-		res += key[i]; // append the next character to our return long
-	}
-
-    // printf("Key: %s, Unsigned Long: %ld\n", key, res);
-
     int sigbits = _log(num_partitions);
     int shift = 32 - sigbits;
     
+    char **ptr;
+    unsigned long test = strtoul(key, ptr, 10);
+    test = test & 0xffffffff;
+
+    //printf("%d\n", (unsigned)atoi(key)>>shift);
+
+    // printf("Key: %s\n", key);
     // printf("shift: %d\n", shift);
-    // printf("Returning: %ld\n", res >> shift);
     // printf("Number of Paritions: %d\n\n", num_partitions);
+    // printf("Using strtoul: %ld\n", test);
+    // printf("Partition (return value): %ld\n", test >> shift);
     
-    return res >> shift;
+    return (unsigned) atoi(key)>>shift;
+    //eturn test >> shift;
 }
+
+// Saving as back-up for MR_SortedPartition
+// unsigned long res = 0;
+// for(int i = 0; i < 4; i++) {
+// 	res <<= 8;// shift the long 8 bits left
+// 	res += key[i]; // append the next character to our return long
+// }
 
 // returns a pointer to the iterator's next value
 char* get_next(char *key, int partition_number)
@@ -99,6 +107,16 @@ char* get_next(char *key, int partition_number)
 
     struct key_value_mapper *curr_partition = partitions[partition_number].head;
     // need to check if next value is different
+
+    for(int i = 0; i < NUM_PARTITIONS; i++) {
+        struct key_value_mapper *current = partitions[partition_number].head;
+        while (current != NULL) 
+        {
+            //printf("%s\n", current->key);
+            current = current->next;
+        }
+        
+    }
 
     pthread_mutex_lock(&partitions[partition_number].lock);
     if (isNextKeyDifferent[partition_number] == 1){
@@ -117,13 +135,16 @@ char* get_next(char *key, int partition_number)
                     // set flag to 1
                     isNextKeyDifferent[partition_number] = 1;
                     pthread_mutex_unlock(&partitions[partition_number].lock);
+                    // printf("%s\n", curr_partition->key);
                     return curr_partition->val;
                 }
                 pthread_mutex_unlock(&partitions[partition_number].lock);
+                // printf("%s\n", curr_partition->key);
                 return curr_partition->val;
 
             }else {
                 pthread_mutex_unlock(&partitions[partition_number].lock);
+                // printf("%s\n", curr_partition->key);
                 return curr_partition->val;
             }
         }
@@ -144,8 +165,7 @@ void MR_Emit(char *key, char *value)
         return;
     }
 
-    //int hashIndex = partitioner(key, NUM_PARTITIONS);
-    int hashIndex = MR_SortedPartition(key, NUM_PARTITIONS);
+    int hashIndex = partitioner(key, NUM_PARTITIONS);
     struct key_value_mapper *curr_partition =  partitions[hashIndex].head;
     struct key_value_mapper *new = malloc(sizeof(struct key_value_mapper));
     new->key = malloc(sizeof(char)*(strlen(key) + 1));
@@ -294,6 +314,12 @@ void MR_Run(int argc, char *argv[], Mapper map,
              pthread_join(reducers[i], NULL);
          }
      }
+
+
+
+    // FREE MEMORY
+    //free(partitions);
+    //free(isNextKeyDifferent);
 
 //    for (int i = 0; i < NUM_PARTITIONS; i++){
 //        struct key_value_mapper *iterator =  partitions[i].head;
