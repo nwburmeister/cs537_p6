@@ -75,23 +75,20 @@ unsigned long MR_SortedPartition(char *key, int num_partitions)
         return 0;
     }
 
-    char *test = "bas";
-    key = test;
-
-    int sigbits = _log(num_partitions);
     unsigned long res = 0;
     for(int i = 0; i < 4; i++) {
 		res <<= 8;// shift the long 8 bits left
 		res += key[i]; // append the next character to our return long
 	}
 
-    printf("Key: %s, Unsigned Long: %ld\n", key, res);
+    // printf("Key: %s, Unsigned Long: %ld\n", key, res);
 
-    int a = _log(res);
-    int shift = a - (sigbits-1);
+    int sigbits = _log(num_partitions);
+    int shift = 32 - sigbits;
     
-    printf("Returning: %ld\n", res >> shift);
-    printf("Number of Paritions: %d\n\n", num_partitions);
+    // printf("shift: %d\n", shift);
+    // printf("Returning: %ld\n", res >> shift);
+    // printf("Number of Paritions: %d\n\n", num_partitions);
     
     return res >> shift;
 }
@@ -147,7 +144,8 @@ void MR_Emit(char *key, char *value)
         return;
     }
 
-    int hashIndex = partitioner(key, NUM_PARTITIONS);
+    //int hashIndex = partitioner(key, NUM_PARTITIONS);
+    int hashIndex = MR_SortedPartition(key, NUM_PARTITIONS);
     struct key_value_mapper *curr_partition =  partitions[hashIndex].head;
     struct key_value_mapper *new = malloc(sizeof(struct key_value_mapper));
     new->key = malloc(sizeof(char)*(strlen(key) + 1));
@@ -165,7 +163,6 @@ void MR_Emit(char *key, char *value)
 
     // ACQUIRE THE LOCK
     pthread_mutex_lock(&partitions[hashIndex].lock);
-    MR_SortedPartition(key, NUM_PARTITIONS);
     struct key_value_mapper *prev = NULL;
     while(iterator != NULL) {    
         if(strcmp(iterator->key, key) > 0) {
