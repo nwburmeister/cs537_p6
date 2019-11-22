@@ -165,7 +165,7 @@ unsigned long MR_SortedPartition(char *key, int num_partitions) {
 }
 
 
-void * set_backup(struct key_value_mapper *curr_partition,
+void set_backup(struct key_value_mapper *curr_partition,
     int partition_number) {
         if (backup_partitions[partition_number].head == NULL) {
             backup_partitions[partition_number].head = curr_partition;
@@ -174,6 +174,7 @@ void * set_backup(struct key_value_mapper *curr_partition,
             curr_partition->next = backup_partitions[partition_number].head;
             backup_partitions[partition_number].head = curr_partition;
         }
+        
 }
 
 // returns a pointer to the iterator's next value
@@ -225,13 +226,11 @@ void MR_Emit(char *key, char *value) {
     }
 
     int hashIndex = partitioner(key, NUM_PARTITIONS);
-    struct key_value_mapper *curr_partition = partitions[hashIndex].head;
     struct key_value_mapper *new = malloc(sizeof(struct key_value_mapper));
     new->key = malloc(sizeof(char) * (strlen(key) + 1));
     strcpy(new->key, key);
     new->val = value;
     new->processed = 0;
-
 
     // ACQUIRE THE LOCK
     pthread_mutex_lock(&partitions[hashIndex].lock);
@@ -246,40 +245,11 @@ void MR_Emit(char *key, char *value) {
     new->next = partitions[hashIndex].head;
     partitions[hashIndex].head = new;
 
-    // struct key_value_mapper *prev = NULL;
-    // while (iterator != NULL) {
-    //     if (strcmp(iterator->key, key) > 0) {
-    //         if (prev == NULL) {
-    //             new->next = iterator;
-    //             partitions[hashIndex].head = new;
-    //             pthread_mutex_unlock(&partitions[hashIndex].lock);
-    //             return;
-    //         } else {
-    //             prev->next = new;
-    //             new->next = iterator;
-    //             pthread_mutex_unlock(&partitions[hashIndex].lock);
-    //             return;
-    //         }
-    //     }
-    //     prev = iterator;
-    //     iterator = iterator->next;
-    // }
-    // prev->next = new;
-    // new->next = NULL;
     // RELEASE THE LOCK
     pthread_mutex_unlock(&partitions[hashIndex].lock);
     return;
 }
 
-
-void printPart(struct key_value_mapper *head) {
-    struct key_value_mapper *iterator = head;
-    printf("%s\n", "NEW PART*********************");
-    while (iterator != NULL) {
-        printf("%s\n", iterator->key);
-        iterator = iterator->next;
-    }
-}
 
 // assigns partitions to reducer threads
 void *Reduce_Thread_Helper_Func() {
@@ -305,8 +275,6 @@ void *Reduce_Thread_Helper_Func() {
         MergeSort(&partitions[*glob_spec_var].head);
 
         iterator = partitions[*glob_spec_var].head;
-//        printf("%d\n", *glob_spec_var);
-//        printPart(partitions[*glob_spec_var].head);
         while (iterator != NULL) {
             reducer(iterator->key, get_next, *glob_spec_var);
             iterator = partitions[*glob_spec_var].head;
@@ -382,15 +350,12 @@ void MR_Run(int argc, char *argv[], Mapper map,
 
     // FREE MEMORY - might need to do more than this??
 
-    int counter = 0;
     for (int i = 0; i < NUM_PARTITIONS; i++) {
         struct key_value_mapper *iterator = backup_partitions[i].head;
         struct key_value_mapper *tmp;
-        // printf("%p\n", partitions[i].head);
+        
         while (iterator != NULL) {
             free(iterator->key);
-            // counter += 1;
-            // printf("%s\n", iterator->key);
             tmp = iterator;
             iterator = iterator->next;
             free(tmp);
