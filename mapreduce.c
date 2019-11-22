@@ -41,115 +41,86 @@ struct partition_info *backup_partitions;
 
 pthread_key_t glob_var_key;
 
-
-
-
+// MERGE SORT TAKEN FROM ONLINE SOURCE: https://www.geeksforgeeks.org/merge-sort-for-linked-list/
 // Takes two lists sorted in increasing order, and merge their nodes
 // together to make one big sorted list which is returned
-struct key_value_mapper* SortedMerge(struct key_value_mapper* a, struct key_value_mapper* b)
-{
-	// Base cases
-	if (a == NULL)
-		return b;
+struct key_value_mapper* SortedMerge(struct key_value_mapper* a,
+    struct key_value_mapper* b) {
+    // Base cases
+    if (a == NULL)
+        return b;
 
-	else if (b == NULL)
-		return a;
+    else if (b == NULL)
+        return a;
 
-	struct key_value_mapper* result = NULL;
+    struct key_value_mapper* result = NULL;
 
-	// Pick either a or b, and recur
-    
-    //printf("%s vs %s\n", a->key, b->key);
-	if (strcmp(a->key, b->key) <= 0)
-	{
-		result = a;
-		result->next = SortedMerge(a->next, b);
-	}
-	else
-	{
-		result = b;
-		result->next = SortedMerge(a, b->next);
-	}
+    // Pick either a or b, and recur
 
-	return result;
+    if (strcmp(a->key, b->key) <= 0) {
+        result = a;
+        result->next = SortedMerge(a->next, b);
+    } else {
+        result = b;
+        result->next = SortedMerge(a, b->next);
+    }
+
+    return result;
 }
 
-/*
-Split the nodes of the given list into front and back halves,
-and return the two lists using the reference parameters.
-If the length is odd, the extra node should go in the front list.
-It uses the fast/slow pointer strategy
-*/
-void FrontBackSplit(struct key_value_mapper* source, struct key_value_mapper** frontRef,
-					struct key_value_mapper** backRef)
-{
-	// if length is less than 2, handle separately
-	if (source == NULL || source->next == NULL)
-	{
-		*frontRef = source;
-		*backRef = NULL;
-		return;
-	}
+// MERGE SORT TAKEN FROM ONLINE SOURCE: https://www.geeksforgeeks.org/merge-sort-for-linked-list/
+// Split the nodes of the given list into front and back halves,
+// and return the two lists using the reference parameters.
+// If the length is odd, the extra node should go in the front list.
+// It uses the fast/slow pointer strategy
+void FrontBackSplit(struct key_value_mapper* source,
+    struct key_value_mapper** frontRef, struct key_value_mapper** backRef) {
+    // if length is less than 2, handle separately
+    if (source == NULL || source->next == NULL) {
+        *frontRef = source;
+        *backRef = NULL;
+        return;
+    }
 
-	struct key_value_mapper* slow = source;
-	struct key_value_mapper* fast = source->next;
+    struct key_value_mapper* slow = source;
+    struct key_value_mapper* fast = source->next;
 
-	// Advance 'fast' two nodes, and advance 'slow' one node
-	while (fast != NULL)
-	{
-		fast = fast->next;
-		if (fast != NULL)
-		{
-			slow = slow->next;
-			fast = fast->next;
-		}
-	}
+    // Advance 'fast' two nodes, and advance 'slow' one node
+    while (fast != NULL) {
+        fast = fast->next;
+        if (fast != NULL) {
+            slow = slow->next;
+            fast = fast->next;
+        }
+    }
 
-	// 'slow' is before the midpoint in the list, so split it in two
-	// at that point.
-	*frontRef = source;
-	*backRef = slow->next;
-	slow->next = NULL;
+    // 'slow' is before the midpoint in the list, so split it in two
+    // at that point.
+    *frontRef = source;
+    *backRef = slow->next;
+    slow->next = NULL;
 }
 
+// MERGE SORT TAKEN FROM ONLINE SOURCE: https://www.geeksforgeeks.org/merge-sort-for-linked-list/
 // Sort given linked list using Merge sort algorithm
-void MergeSort(struct key_value_mapper** head)
-{
-	// Base case -- length 0 or 1
-	if (*head == NULL || (*head)->next == NULL)
-		return;
+void MergeSort(struct key_value_mapper** head) {
+    // Base case -- length 0 or 1
+    if (*head == NULL || (*head)->next == NULL)
+        return;
 
-	struct key_value_mapper* a;
-	struct key_value_mapper* b;
+    struct key_value_mapper* a;
+    struct key_value_mapper* b;
 
-	// Split head into 'a' and 'b' sublists
-	FrontBackSplit(*head, &a, &b);
+    // Split head into 'a' and 'b' sublists
+    FrontBackSplit(*head, &a, &b);
 
-	// Recursively sort the sublists
-	MergeSort(&a);
-	MergeSort(&b);
+    // Recursively sort the sublists
+    MergeSort(&a);
+    MergeSort(&b);
 
-	// answer = merge the two sorted lists together
-	*head = SortedMerge(a, b);
+    // answer = merge the two sorted lists together
+    *head = SortedMerge(a, b);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // Default sorting that has been provided for us
 unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
@@ -194,7 +165,8 @@ unsigned long MR_SortedPartition(char *key, int num_partitions) {
 }
 
 
-void * set_backup(struct key_value_mapper *curr_partition, int partition_number) {
+void * set_backup(struct key_value_mapper *curr_partition,
+    int partition_number) {
         if (backup_partitions[partition_number].head == NULL) {
             backup_partitions[partition_number].head = curr_partition;
             curr_partition->next = NULL;
@@ -240,7 +212,7 @@ char *get_next(char *key, int partition_number) {
         }
     }
     // returns NULL if for some reason the key is not found in the partition
-    //set_backup(curr_partition, partition_number);
+    // set_backup(curr_partition, partition_number);
     pthread_mutex_unlock(&partitions[partition_number].lock);
     return NULL;
 }
@@ -270,10 +242,10 @@ void MR_Emit(char *key, char *value) {
         pthread_mutex_unlock(&partitions[hashIndex].lock);
         return;
     }
-    
+
     new->next = partitions[hashIndex].head;
-    partitions[hashIndex].head = new; 
-    
+    partitions[hashIndex].head = new;
+
     // struct key_value_mapper *prev = NULL;
     // while (iterator != NULL) {
     //     if (strcmp(iterator->key, key) > 0) {
@@ -300,10 +272,10 @@ void MR_Emit(char *key, char *value) {
 }
 
 
-void printPart (struct key_value_mapper *head){
+void printPart(struct key_value_mapper *head) {
     struct key_value_mapper *iterator = head;
     printf("%s\n", "NEW PART*********************");
-    while(iterator != NULL){
+    while (iterator != NULL) {
         printf("%s\n", iterator->key);
         iterator = iterator->next;
     }
@@ -329,7 +301,6 @@ void *Reduce_Thread_Helper_Func() {
         NEXT_PARTITION++;
         pthread_mutex_unlock(&fileLock);
 
-    
         int *glob_spec_var = pthread_getspecific(glob_var_key);
         MergeSort(&partitions[*glob_spec_var].head);
 
@@ -375,7 +346,8 @@ void MR_Run(int argc, char *argv[], Mapper map,
     NUM_PARTITIONS = num_partitions;
     NUM_FILES = argc - 1;
     partitions = malloc((num_partitions + 1) * sizeof(struct partition_info));
-    backup_partitions = malloc((num_partitions + 1) * sizeof(struct partition_info));
+    backup_partitions = malloc((num_partitions + 1) *
+        sizeof(struct partition_info));
     isNextKeyDifferent = calloc(num_partitions, sizeof(int));
     FILES = &argv[1];
 
@@ -411,12 +383,11 @@ void MR_Run(int argc, char *argv[], Mapper map,
     // FREE MEMORY - might need to do more than this??
 
     int counter = 0;
-    for (int i = 0; i < NUM_PARTITIONS; i++){
-
+    for (int i = 0; i < NUM_PARTITIONS; i++) {
         struct key_value_mapper *iterator = backup_partitions[i].head;
         struct key_value_mapper *tmp;
         // printf("%p\n", partitions[i].head);
-        while (iterator != NULL){
+        while (iterator != NULL) {
             free(iterator->key);
             // counter += 1;
             // printf("%s\n", iterator->key);
@@ -425,7 +396,7 @@ void MR_Run(int argc, char *argv[], Mapper map,
             free(tmp);
         }
     }
-    //printf("%d\n", counter);
+
     free(partitions);
     free(backup_partitions);
     free(isNextKeyDifferent);
