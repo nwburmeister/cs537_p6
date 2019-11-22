@@ -30,7 +30,7 @@ void Reduce(char *key, Getter get_next, int partition_number) {
         count++;
     }
 
-    //printf("%s %d\n", key, count);
+    printf("%s %d\n", key, count);
 }
 
 int main(int argc, char *argv[]) {

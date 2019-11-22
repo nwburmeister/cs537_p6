@@ -37,8 +37,13 @@ int CURR_FILE;
 char **FILES;
 pthread_mutex_t fileLock;
 struct partition_info *partitions;
+struct partition_info *backup_partitions;
 
 pthread_key_t glob_var_key;
+
+
+
+
 
 // Default sorting that has been provided for us
 unsigned long MR_DefaultHashPartition(char *key, int num_partitions) {
@@ -82,6 +87,17 @@ unsigned long MR_SortedPartition(char *key, int num_partitions) {
     return partition;
 }
 
+
+void * set_backup(struct key_value_mapper *curr_partition, int partition_number) {
+        if (backup_partitions[partition_number].head == NULL) {
+            backup_partitions[partition_number].head = curr_partition;
+            curr_partition->next = NULL;
+        } else {
+            curr_partition->next = backup_partitions[partition_number].head;
+            backup_partitions[partition_number].head = curr_partition;
+        }
+}
+
 // returns a pointer to the iterator's next value
 char *get_next(char *key, int partition_number) {
     struct key_value_mapper *curr_partition = partitions[partition_number].head;
@@ -104,18 +120,21 @@ char *get_next(char *key, int partition_number) {
                     // set flag to 1
                     isNextKeyDifferent[partition_number] = 1;
                     pthread_mutex_unlock(&partitions[partition_number].lock);
+                    set_backup(curr_partition, partition_number);
                     return curr_partition->val;
                 }
                 pthread_mutex_unlock(&partitions[partition_number].lock);
+                set_backup(curr_partition, partition_number);
                 return curr_partition->val;
             } else {
                 pthread_mutex_unlock(&partitions[partition_number].lock);
+                set_backup(curr_partition, partition_number);
                 return curr_partition->val;
             }
         }
     }
     // returns NULL if for some reason the key is not found in the partition
-
+    //set_backup(curr_partition, partition_number);
     pthread_mutex_unlock(&partitions[partition_number].lock);
     return NULL;
 }
@@ -194,6 +213,7 @@ void *Reduce_Thread_Helper_Func() {
             reducer(iterator->key, get_next, *glob_spec_var);
             iterator = partitions[*glob_spec_var].head;
         }
+        free(p);
     }
 }
 
@@ -228,6 +248,7 @@ void MR_Run(int argc, char *argv[], Mapper map,
     NUM_PARTITIONS = num_partitions;
     NUM_FILES = argc - 1;
     partitions = malloc((num_partitions + 1) * sizeof(struct partition_info));
+    backup_partitions = malloc((num_partitions + 1) * sizeof(struct partition_info));
     isNextKeyDifferent = calloc(num_partitions, sizeof(int));
     FILES = &argv[1];
 
@@ -261,6 +282,24 @@ void MR_Run(int argc, char *argv[], Mapper map,
     }
 
     // FREE MEMORY - might need to do more than this??
+
+    int counter = 0;
+    for (int i = 0; i < NUM_PARTITIONS; i++){
+
+        struct key_value_mapper *iterator = backup_partitions[i].head;
+        struct key_value_mapper *tmp;
+        // printf("%p\n", partitions[i].head);
+        while (iterator != NULL){
+            free(iterator->key);
+            // counter += 1;
+            // printf("%s\n", iterator->key);
+            tmp = iterator;
+            iterator = iterator->next;
+            free(tmp);
+        }
+    }
+    //printf("%d\n", counter);
     free(partitions);
+    free(backup_partitions);
     free(isNextKeyDifferent);
 }
